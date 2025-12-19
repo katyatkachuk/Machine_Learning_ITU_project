@@ -7,7 +7,8 @@ df_train = df_train.drop_duplicates(subset=[col for col in df_train.columns if c
 df_test = pd.read_csv("data/claims_test.csv")
 df_test = df_test.drop_duplicates(subset=[col for col in df_test.columns if col != "IDpol"])
 
-bm_min, bm_max = 50, 230
+bm_min = df_train['BonusMalus'].min()
+bm_max = df_train['BonusMalus'].max()
 
 for df in (df_train, df_test):
     df["BM_Risk"] = (df["BonusMalus"] - bm_min) / (bm_max - bm_min)

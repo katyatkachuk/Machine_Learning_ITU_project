@@ -14,7 +14,8 @@ for df in (df_train, df_test):
     df.drop_duplicates(subset=[c for c in df.columns if c != "IDpol"], inplace=True)
     df["ClaimFlag"] = (df["ClaimNb"] > 0).astype(int)
 
-bm_min, bm_max = 50, 230
+bm_min = df_train['BonusMalus'].min()
+bm_max = df_train['BonusMalus'].max()
 
 for df in (df_train, df_test):
     df["BM_Risk"] = (df["BonusMalus"] - bm_min) / (bm_max - bm_min)
@@ -30,7 +31,6 @@ def minmax(series):
 for df in (df_train, df_test):
     df["Norm_ClaimNb"]   = minmax(df["ClaimNb"])
     df["Norm_Exposure"]  = minmax(df["Exposure"])
-    df["Norm_BonusMalus"] = minmax(df["BonusMalus"])
     
     sev = ((1 * df["Norm_ClaimNb"]) + (0.5 * df["Norm_Exposure"]))
     

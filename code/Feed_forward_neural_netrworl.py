@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score, mean_squared_error
 from tqdm import tqdm
 
 df_train = pd.read_csv("data/claims_train.csv")
@@ -29,7 +30,6 @@ for df in (df_train, df_test):
     df["Norm_BonusMalus"] = minmax(df["BonusMalus"])
     
     sev = ((1 * df["Norm_ClaimNb"]) + (0.5 * df["Norm_Exposure"]))
-    
     sev = (sev - sev.min()) / (sev.max() - sev.min() + 1e-9)
     df["Severity"] = sev
 
@@ -48,17 +48,18 @@ def preprocess(df, scaler=None, fit_scaler=False):
     df_num = df[features]
     if scaler is None and fit_scaler:
         scaler = StandardScaler()
-        df_num_scaled = pd.DataFrame(scaler.fit_transform(df_num), columns=features)
+        df_num_scaled = pd.DataFrame(scaler.fit_transform(df_num), columns=features, index=df_num.index)
     elif scaler is not None:
-        df_num_scaled = pd.DataFrame(scaler.transform(df_num), columns=features)
+        df_num_scaled = pd.DataFrame(scaler.transform(df_num), columns=features, index=df_num.index)
     else:
         df_num_scaled = df_num
     df_proc = pd.concat([df_num_scaled, df_cat], axis=1)
     return df_proc, scaler
 
-oversample_factor = 10    
+# Balancing
+oversample_factor = 10     
 weight_nonzero = 1.2      
-undersample_factor = 0.7  
+undersample_factor = 0.7   
 
 df_zeros = df_train[df_train[target] == 0]
 df_nonzero = df_train[df_train[target] > 0]
@@ -68,8 +69,9 @@ if undersample_factor < 1.0:
     df_zeros = df_zeros.sample(n=n_keep, random_state=42)
 
 df_nonzero_oversampled = pd.concat([df_nonzero] * oversample_factor, ignore_index=True)
-
 df_balanced = pd.concat([df_zeros, df_nonzero_oversampled], ignore_index=True)
+
+print(f"Balanced dataset: {len(df_balanced)} samples")
 
 X_raw = df_balanced[features + cat_cols]
 y = df_balanced[target].to_numpy().reshape(-1, 1)
@@ -161,7 +163,7 @@ class SimpleNeuralNetwork:
             self.weights[i] = self.weights[i] - self.learning_rate * grads_w[i]
             self.biases[i] = self.biases[i] - self.learning_rate * grads_b[i]
 
-    def train(self, X, y, epochs=50, batch_size=64, sample_weight=None, verbose=True):
+    def train(self, X, y, epochs=100, batch_size=64, sample_weight=None, verbose=True):
         n_samples = X.shape[0]
         for epoch in range(epochs):
             perm = np.random.permutation(n_samples)
@@ -188,24 +190,102 @@ class SimpleNeuralNetwork:
     def predict(self, X):
         return self.forward(X)
 
+# Train NN
 input_dim = X_train.shape[1]
 hidden_layers = [32, 16]
 
+print("Training Neural Network...")
 nn = SimpleNeuralNetwork(input_dim=input_dim, hidden_dims=hidden_layers, learning_rate=0.001)
 nn.train(X_train, y_train, epochs=100, batch_size=64, sample_weight=w_train)
 
+# VALIDATION metrics
+print("\n--- Validation Metrics ---")
 y_val_pred = nn.predict(X_val).flatten()
-mse = np.mean((y_val.flatten() - y_val_pred) ** 2)
-mae = np.mean(np.abs(y_val.flatten() - y_val_pred))
-r2 = 1 - np.sum((y_val.flatten() - y_val_pred) ** 2) / np.sum((y_val.flatten() - np.mean(y_val.flatten())) ** 2)
-y_val_bin = (y_val.flatten() >= 1).astype(int)
-y_pred_bin = (y_val_pred >= 0.5).astype(int)
-tp = np.sum((y_val_bin == 1) & (y_pred_bin == 1))
-fp = np.sum((y_val_bin == 0) & (y_pred_bin == 1))
-fn = np.sum((y_val_bin == 1) & (y_pred_bin == 0))
-precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+mse_val = np.mean((y_val.flatten() - y_val_pred) ** 2)
+mae_val = np.mean(np.abs(y_val.flatten() - y_val_pred))
+r2_val = 1 - np.sum((y_val.flatten() - y_val_pred) ** 2) / np.sum((y_val.flatten() - np.mean(y_val.flatten())) ** 2)
 
-print(f"Validation metrics: MSE={mse:.5f}, MAE={mae:.5f}, R2={r2:.5f}")
-print(f"Classification metrics: Precision={precision:.5f}, Recall={recall:.5f}, F1={f1:.5f}")
+print(f"Validation MSE={mse_val:.5f}, MAE={mae_val:.5f}, R2={r2_val:.5f}")
+
+# TEST evaluation (FIXED!)
+print("\n--- Test Evaluation ---")
+X_test_raw = df_test[features + cat_cols].copy()
+X_test_proc, _ = preprocess(X_test_raw, scaler=scaler)
+
+# Align test columns with train columns (CRITICAL FIX)
+train_cols = X_proc.columns
+for col in train_cols:
+    if col not in X_test_proc.columns:
+        X_test_proc[col] = 0
+
+# Reorder columns to match train exactly, preserve all rows
+X_test_proc = X_test_proc.reindex(columns=train_cols, fill_value=0)
+X_test_np = X_test_proc.to_numpy()
+
+print(f"Test shape: {X_test_np.shape}, df_test shape: {df_test.shape}")
+
+y_test_pred = nn.predict(X_test_np).flatten()
+y_test_true = df_test["ClaimNb"].values
+
+test_mse = np.mean((y_test_true - y_test_pred) ** 2)
+test_r2 = r2_score(y_test_true, y_test_pred)
+test_mae = np.mean(np.abs(y_test_true - y_test_pred))
+
+print(f"Test MSE: {test_mse:.6f}")
+print(f"Test R2 Score: {test_r2:.4f}")
+print(f"Test MAE: {test_mae:.5f}")
+
+# FULL XGBoost-style ranking metrics
+print("\n=== Ranking Quality & Lift Analysis ===")
+df_res = pd.DataFrame({
+    "Actual_Claims": y_test_true,
+    "Predicted_Score": y_test_pred
+})
+df_res = df_res.sort_values("Predicted_Score", ascending=False).reset_index(drop=True)
+df_res["Rank"] = df_res.index + 1
+df_res["Percentile"] = df_res["Rank"] / len(df_res)
+
+avg_pct = df_res[df_res["Actual_Claims"] >= 1]["Percentile"].mean() * 100
+avg_pct_sev = df_res[df_res["Actual_Claims"] >= 2]["Percentile"].mean() * 100
+
+print(f"\n[A] Average Rank Position (Lower is Better)")
+print(f" - Any Claim (>0): Top {avg_pct:.1f}%")
+print(f" - Severe Claim (>=2): Top {avg_pct_sev:.1f}%")
+
+k_values = [100, 500, 1000, 2000, 5000]
+for k in k_values:
+    top_k = df_res.iloc[:k]
+    n_claims = (top_k["Actual_Claims"] > 0).sum()
+    precision = n_claims / k
+    lift = precision / (len(df_res[df_res['Actual_Claims']>0])/len(df_res))
+    print(f" - Top {k}: {n_claims} Claims (Prec: {precision:.1%}, Lift: {lift:.1f}x)")
+
+print(f"\n[C] Bucket Analysis (Recall & Lift)")
+top_fracs = [0.05, 0.10, 0.20, 0.50]
+total_claims = (df_res["Actual_Claims"] > 0).sum()
+total_severe = (df_res["Actual_Claims"] >= 2).sum()
+base_rate = total_claims / len(df_res)
+
+for frac in top_fracs:
+    k = int(len(df_res) * frac)
+    top_k = df_res.iloc[:k]
+    
+    n_claims = (top_k["Actual_Claims"] > 0).sum()
+    n_severe = (top_k["Actual_Claims"] >= 2).sum()
+    
+    recall = n_claims / total_claims
+    recall_sev = n_severe / total_severe if total_severe > 0 else 0
+    precision = n_claims / k
+    lift = precision / base_rate
+    
+    print(f" - Top {int(frac*100)}% ({k} rows):")
+    print(f"    Claims Found: {n_claims}/{total_claims} (Recall: {recall:.1%})")
+    print(f"    Severe Found: {n_severe}/{total_severe} (Recall: {recall_sev:.1%})")
+    print(f"    Precision: {precision:.1%} | Lift: {lift:.1f}x")
+
+top_5_idx = int(len(df_res) * 0.05)
+top_5_df = df_res.iloc[:top_5_idx]
+corr = top_5_df["Predicted_Score"].corr(top_5_df["Actual_Claims"], method="spearman")
+
+print(f"\n[D] Rank Correlation inside Top 5% Bucket: {corr:.4f}")
+print("\nDone.")

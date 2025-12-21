@@ -1,10 +1,10 @@
 import pandas as pd
 import numpy as np
 
-df_train = pd.read_csv("data/claims_train.csv")
+df_train = pd.read_csv("data/claims_train_clean.csv")
 df_train = df_train.drop_duplicates(subset=[col for col in df_train.columns if col != "IDpol"])
 
-df_test = pd.read_csv("data/claims_test.csv")
+df_test = pd.read_csv("data/claims_test_clean.csv")
 df_test = df_test.drop_duplicates(subset=[col for col in df_test.columns if col != "IDpol"])
 
 bm_min = df_train['BonusMalus'].min()

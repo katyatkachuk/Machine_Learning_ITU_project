@@ -7,8 +7,8 @@ from xgboost import XGBRegressor
 
 print("Loading and preprocessing data...")
 
-df_train = pd.read_csv("data/claims_train.csv")
-df_test = pd.read_csv("data/claims_test.csv")
+df_train = pd.read_csv("data/claims_train_clean.csv")
+df_test = pd.read_csv("data/claims_test_clean.csv")
 
 for df in (df_train, df_test):
     df.drop_duplicates(subset=[c for c in df.columns if c != "IDpol"], inplace=True)

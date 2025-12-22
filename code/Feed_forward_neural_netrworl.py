@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import r2_score
 from tqdm import tqdm
 
 df_train = pd.read_csv("data/claims_train_clean.csv")

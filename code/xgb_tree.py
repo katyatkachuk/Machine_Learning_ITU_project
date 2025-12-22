@@ -90,11 +90,18 @@ reg = XGBRegressor(
 
 reg.fit(X_tr, y_tr)
 
+y_val_pred = reg.predict(X_val)
+
+print("\n--- Basic Regression Metrics (Validation) ---")
+print(f"Val R2 Score: {r2_score(y_val, y_val_pred):.4f}")
+print(f"Val MSE: {mean_squared_error(y_val, y_val_pred):.6f}")
+
 y_test_pred = reg.predict(X_test)
 
 print("\n--- Basic Regression Metrics ---")
 print(f"Test R2 Score: {r2_score(y_test, y_test_pred):.4f}")
 print(f"Test MSE: {mean_squared_error(y_test, y_test_pred):.6f}")
+
 
 print("\n=== Ranking Quality & Lift Analysis ===")
 
@@ -153,3 +160,5 @@ corr = top_5_df["Predicted_Score"].corr(top_5_df["Actual_Claims"], method="spear
 
 print(f"\n[D] Rank Correlation inside Top 5% Bucket: {corr:.4f}")
 print("\nDone.")
+
+
